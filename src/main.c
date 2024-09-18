@@ -113,6 +113,7 @@ extern void tusb_hal_nrf_power_event(uint32_t event);
 #define DFU_MAGIC_SKIP                  0x6d
 
 #define DFU_DBL_RESET_MAGIC             0x5A1AD5      // SALADS
+#define DFU_TRI_RESET_MAGIC             0x5A1AD0      // SALADO
 #define DFU_DBL_RESET_APP               0x4ee5677e
 #define DFU_DBL_RESET_DELAY             500
 #define DFU_DBL_RESET_MEM               0x20007F7C
@@ -226,7 +227,7 @@ static void check_dfu_mode(void) {
   _sd_inited = (gpregret == DFU_MAGIC_OTA_APPJUM);
 
   // Start Bootloader in BLE OTA mode
-  _ota_dfu = (gpregret == DFU_MAGIC_OTA_APPJUM) || (gpregret == DFU_MAGIC_OTA_RESET);
+  _ota_dfu = (gpregret == DFU_MAGIC_OTA_APPJUM) || (gpregret == DFU_MAGIC_OTA_RESET) || ((*dbl_reset_mem) == DFU_TRI_RESET_MAGIC);
 
   // Serial only mode
   bool const serial_only_dfu = (gpregret == DFU_MAGIC_SERIAL_ONLY_RESET);
@@ -237,7 +238,7 @@ static void check_dfu_mode(void) {
 
   // start either serial, uf2 or ble
   bool dfu_start = _ota_dfu || serial_only_dfu || uf2_dfu ||
-                   (((*dbl_reset_mem) == DFU_DBL_RESET_MAGIC) && reason_reset_pin);
+                   (((*dbl_reset_mem) == DFU_DBL_RESET_MAGIC) && reason_reset_pin) || (((*dbl_reset_mem) == DFU_TRI_RESET_MAGIC) && reason_reset_pin);
 
   // Clear GPREGRET if it is our values
   if (dfu_start || dfu_skip) NRF_POWER->GPREGRET = 0;
@@ -268,14 +269,23 @@ static void check_dfu_mode(void) {
     bootloader_dfu_start(false, DFU_SERIAL_STARTUP_INTERVAL, false);
 #else
     // Note: RESETREAS is not clear by bootloader, it should be cleared by application upon init()
-    if (reason_reset_pin) {
+    
+#endif
+  }
+
+  if (reason_reset_pin)
+  {
+    if( (*dbl_reset_mem) == DFU_DBL_RESET_MAGIC || (*dbl_reset_mem) == DFU_TRI_RESET_MAGIC)
+    {
+      (*dbl_reset_mem) = DFU_TRI_RESET_MAGIC;
+    }
+    else
+    {
       // Register our first reset for double reset detection
       (*dbl_reset_mem) = DFU_DBL_RESET_MAGIC;
-
-      // if RST is pressed during this delay (double reset)--> if will enter dfu
-      NRFX_DELAY_MS(DFU_DBL_RESET_DELAY);
     }
-#endif
+    // if RST is pressed during this delay (double reset)--> if will enter dfu
+    NRFX_DELAY_MS(DFU_DBL_RESET_DELAY);
   }
 
   if (APP_ASKS_FOR_SINGLE_TAP_RESET()) {
